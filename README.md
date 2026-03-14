@@ -1,226 +1,183 @@
-# Project HADES – Distributed Relay Control (ESP8266 + ESP-NOW)
+# Project NEXUS – Distributed IoT Control Platform
 
 ## Overview
 
-This project is an experimental stage of **Project HADES**, designed to explore the creation of a **distributed automation network using ESP8266 devices**.
+Project NEXUS is an experimental distributed IoT control platform built using ESP8266 microcontrollers. The goal of the project is to explore the development of a decentralized device network capable of communication, discovery, synchronization and remote control over a local Wi-Fi infrastructure.
 
-The system implements a **controller-node architecture**, where one ESP8266 device acts as a central controller providing a web interface and managing communication with multiple ESP-01 relay nodes through **ESP-NOW**.
+Instead of relying on cloud services or centralized servers, NEXUS focuses on a lightweight peer-to-peer architecture where each device participates in the network, shares its status, and reacts to commands in real time.
 
-Unlike traditional IoT systems that rely on routers or cloud services, this architecture uses **direct peer-to-peer wireless communication**, enabling low latency, reduced network complexity, and autonomous device discovery.
+The project was designed as a foundation for building more advanced automation systems, similar in concept to platforms such as Home Assistant, but implemented at a low-level embedded systems layer. The objective is to create a modular environment where devices such as relays, sensors and controllers can automatically discover each other and cooperate as part of a distributed system.
 
-The main goal of this version was to experiment with:
-
-- distributed embedded systems
-- device discovery and registration
-- peer-to-peer wireless communication
-- remote relay control
-- embedded web interfaces
-- device lifecycle monitoring
-
-This version represents a significant step between the **initial Twin Relays prototype** and the more complex **HADES interlock system architecture**.
-
----
+This project originated as an evolution of earlier experiments with ESP8266 networking and relay control, eventually growing into a flexible framework for distributed automation and device coordination.
 
 ## System Architecture
 
-The system is composed of a **central controller** and one or more **relay nodes**.
+NEXUS operates as a distributed network of ESP8266-based devices connected through a standard Wi-Fi network. Each device runs the same firmware but is configured with a specific role using a device identifier.
 
-| Device                 | Role                                          |
-| ---------------------- | --------------------------------------------- |
-| **ESP8266 Controller** | Hosts the web interface and manages devices   |
-| **ESP01 Relay Node**   | Controls relay hardware and executes commands |
+Devices communicate using UDP broadcast messages, allowing them to automatically discover other nodes on the network and exchange status information.
 
-The controller creates a Wi-Fi network and manages all connected nodes.
+Unlike traditional IoT architectures that rely heavily on centralized servers or cloud connectivity, NEXUS distributes the logic across devices. Each node can make decisions based on the information received from the network.
 
-```
-User (Phone / PC)
-        │
-        │ WiFi
-        ▼
-ESP8266 Controller
- Web Interface
- Device Manager
-        │
-        │ ESP-NOW
-        ▼
-ESP01 Relay Nodes
-        │
-        ▼
-      Relays
-```
+Typical architecture example:
 
-Each relay node operates as an independent device capable of receiving commands, reporting status and maintaining its internal state.
+User Interface / Controller Device  
+↓  
+WiFi Network  
+↓  
+Distributed NEXUS Nodes
 
----
+Each node can represent different types of devices such as:
 
-## Communication
+Door controllers  
+Sensor modules  
+Relay actuators  
+Interface devices (buttons, intercom systems)
 
-Communication between devices uses **ESP-NOW**, a wireless protocol that allows ESP8266 devices to exchange data directly without requiring a router.
+This modular architecture allows the system to grow organically as new devices are added.
 
-Advantages of ESP-NOW include:
+## Network Communication
 
-- very low communication latency
-- minimal protocol overhead
-- direct device-to-device communication
-- reliable local networks
-- reduced infrastructure requirements
+Communication between devices is implemented using UDP broadcast packets. This allows messages to reach every node on the network without requiring prior knowledge of device addresses.
 
-The controller periodically performs **device discovery** to detect nodes and maintain an updated list of active devices.
+Messages follow a simple structured format:
 
-### Message Types
+TYPE|DEVICE|DATA
 
-The firmware implements a lightweight messaging structure used for communication.
+This format keeps the protocol lightweight and easy to extend while still allowing devices to interpret commands and status updates.
 
-| Message              | Purpose                         |
-| -------------------- | ------------------------------- |
-| `DISCOVERY`          | Controller searches for devices |
-| `DISCOVERY_RESPONSE` | Node identifies itself          |
-| `RELAY_COMMAND`      | Activate or deactivate relay    |
-| `HEARTBEAT`          | Node reports it is still active |
-| `STATUS`             | Node reports relay state        |
+Several types of messages are used to maintain the network and coordinate devices.
 
-This mechanism allows the controller to automatically detect and monitor devices on the network.
+### Device Discovery
 
----
+When a device starts, it announces itself on the network using a discovery message. Other nodes register the device and keep track of its presence.
 
-## Web Interface
+Example message:
 
-The controller hosts an **embedded web server** that provides a simple control interface.
+DISCOVERY|DEVICE_NAME|DEVICE_IP
 
-The ESP8266 operates as a **Wi-Fi Access Point**, allowing users to connect directly using a smartphone or computer.
+Devices periodically repeat the discovery broadcast to ensure new devices joining the network can detect them.
 
-Example network configuration:
+### Device Confirmation
 
-```
-SSID: ESP-Relay-Control
-Password: 12345678
-```
+Once a device detects another node, it confirms the connection and stores its information locally.
 
-Once connected, the web interface can be accessed at:
+Example:
 
-```
-http://192.168.4.1
-```
+CONFIRM|DEVICE_NAME|DEVICE_IP
 
-The interface allows users to:
+This creates a dynamic device list shared by the network.
 
-- view connected devices
-- trigger relay nodes
-- monitor device status
-- control multiple relays
+### Heartbeat Monitoring
 
-This web interface provides a lightweight control panel without requiring external applications or cloud services.
+To verify that devices remain active, nodes periodically exchange ping and pong messages.
 
----
+PING|DEVICE_NAME|DEVICE_IP  
+PONG|DEVICE_NAME|DEVICE_IP
 
-## Relay Node Behavior
+If a device stops responding for a defined period, it is automatically removed from the internal device list.
 
-Each ESP01 node functions as a **smart relay device**.
+This mechanism provides basic network health monitoring.
 
-When a command is received from the controller:
+### Status Synchronization
 
-1. The node processes the received command.
-2. The relay is activated.
-3. A timer may be started depending on the command.
-4. The relay is automatically deactivated after the delay.
-5. The node reports its status back to the controller.
+Each node periodically broadcasts its operational status. This keeps all devices synchronized with the state of the system.
 
-Example execution flow:
+Example:
 
-```
-Command received
-      ↓
-Relay ON
-      ↓
-Timer started
-      ↓
-Delay elapsed
-      ↓
-Relay OFF
-```
+STATUS|PORTA_A|OPEN  
+STATUS|PORTA_B|CLOSED
 
-Nodes also periodically send **heartbeat messages** so the controller can detect if a device goes offline.
+By continuously sharing state information, devices can react intelligently to changes occurring elsewhere in the network.
 
----
+### Command Execution
 
-## Device Lifecycle Management
+Devices can send commands to other nodes to trigger specific actions.
 
-The controller maintains a list of known devices and tracks their activity.
+Example:
 
-The system performs:
+OPEN|PORTA_A
 
-- automatic device discovery
-- device registration
-- heartbeat monitoring
-- inactive device cleanup
+When the targeted device receives the command, it executes the corresponding operation locally.
 
-This ensures the network remains synchronized and that offline devices are detected automatically.
+## Device Roles
 
----
+Although all devices share the same firmware, each node operates under a specific role defined by its device name.
 
-## Hardware
+Examples of possible roles include:
 
-### Controller
+Controller devices  
+Actuator devices (relays)  
+Sensor nodes  
+Interface devices such as intercom panels or control buttons
 
-- ESP8266 development board (NodeMCU or similar)
+This design simplifies deployment because the same codebase can be reused across different hardware installations.
 
-### Relay Nodes
+## Hardware Platform
 
-- ESP-01 (ESP8266)
-- relay module
+The current implementation uses ESP8266 microcontrollers, particularly development boards such as NodeMCU.
 
-### GPIO Example
+The NodeMCU platform was chosen due to its integrated Wi-Fi connectivity, sufficient GPIO availability, USB programming interface and stable power regulation.
 
-| Pin   | Function      |
-| ----- | ------------- |
-| GPIO0 | Relay control |
-| GPIO2 | Status LED    |
+Typical hardware elements used in the system include:
 
----
+ESP8266 NodeMCU boards  
+Relay modules  
+Magnetic door sensors  
+Push buttons or switches  
+Indicator LEDs
+
+Because the architecture is modular, new hardware types can be integrated easily.
+
+## Automation Logic
+
+One of the core concepts explored in NEXUS is the ability for devices to make decisions based on the state of other devices.
+
+For example, a node controlling a relay can refuse to activate if another device reports a conflicting state. This allows the implementation of safety systems, interlocking mechanisms, and cooperative automation behaviors.
+
+Instead of a centralized controller managing all logic, the network distributes responsibility across nodes.
+
+This makes the system resilient and flexible.
+
+## Reliability and Safety
+
+To prevent inconsistent states caused by communication failures, devices continuously monitor the last time they received updates from other nodes.
+
+If the system loses communication with a critical device, certain actions may be blocked until the connection is restored.
+
+This approach helps prevent dangerous situations in automation systems where multiple actuators must operate under coordinated conditions.
 
 ## Potential Applications
 
-Although initially designed as a prototype, this architecture can be used for several applications:
+Although still an experimental platform, NEXUS can serve as the basis for many types of distributed automation systems.
 
-- remote relay control
-- electric gate triggers
-- access control systems
-- automation prototypes
-- distributed device networks
+Examples include:
 
----
+Access control systems  
+Smart building automation  
+Distributed relay networks  
+Environmental sensor grids  
+Industrial monitoring prototypes  
+Security and interlock systems
+
+The flexible architecture allows the system to scale from small prototypes to more complex installations.
 
 ## Future Development
 
-The architecture allows the system to evolve into a more advanced distributed automation platform.
+Several improvements can expand the capabilities of the NEXUS platform.
 
-Possible future improvements include:
+Possible future directions include:
 
-- support for multiple relay nodes
-- sensor nodes (door, motion, temperature)
-- automation rules
-- event logging
-- improved web dashboard
-- security and authentication
+Web-based monitoring dashboards  
+Device configuration interfaces  
+Integration with MQTT brokers  
+Event logging and diagnostics  
+Authentication and network security  
+Firmware modularization  
+Sensor node expansion  
+Mobile interface applications
 
----
-
-## Relationship to Project HADES
-
-This project represents an intermediate stage in the development of **Project HADES**.
-
-It introduced key architectural concepts such as:
-
-- controller-node architecture
-- device discovery
-- distributed device management
-- embedded web interfaces
-- wireless automation networks
-
-These concepts later influenced the design of the **HADES distributed interlock system**.
-
----
+These additions could transform NEXUS into a more complete distributed automation framework.
 
 ## Author
 
-Developed by **Davi Han Ko**
+Developed by Davi Han Ko
